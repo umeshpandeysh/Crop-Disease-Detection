@@ -1,190 +1,131 @@
-"""
-train.py
-Crop Disease Detection — CNN Training Script
+#!/usr/bin/env python3
+"""Crop Disease Detection — Training Entry Point.
 
-Trains a CNN for multi-class plant disease classification.
-Supports both PyTorch and Keras backends.
+Usage
+-----
+    python training/train.py --data dataset/ --model efficientnet --epochs 30
 
-Usage:
-    python training/train.py --data_dir dataset/ --epochs 30 --batch_size 32
+This script:
+    1. Loads the dataset using CropDiseaseDataset.
+    2. Applies train/val transforms.
+    3. Trains the selected CNN model (custom or EfficientNet-B0).
+    4. Saves the best checkpoint to models/.
+    5. Prints final metrics.
+
+Requires PyTorch. If PyTorch is not installed, prints a clear error.
 """
+from __future__ import annotations
 
 import argparse
-import os
+import logging
+import sys
 from pathlib import Path
 
-import numpy as np
+# Ensure project root on path
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(name)s - %(message)s',
+)
+logger = logging.getLogger('train')
+
+try:
+    import torch
+    TORCH_AVAILABLE = True
+except ImportError:
+    TORCH_AVAILABLE = False
 
 
-def parse_args():
-    parser = argparse.ArgumentParser(description="Crop Disease CNN Training")
-    parser.add_argument("--data_dir", type=str, default="dataset", help="Path to dataset directory")
-    parser.add_argument("--epochs", type=int, default=30, help="Number of training epochs")
-    parser.add_argument("--batch_size", type=int, default=32, help="Batch size")
-    parser.add_argument("--lr", type=float, default=1e-3, help="Learning rate")
-    parser.add_argument("--img_size", type=int, default=224, help="Input image size")
-    parser.add_argument("--dropout", type=float, default=0.3, help="Dropout rate")
-    parser.add_argument("--output_dir", type=str, default="models", help="Directory to save trained model")
-    return parser.parse_args()
+def parse_args() -> argparse.Namespace:
+    p = argparse.ArgumentParser(description='Crop Disease CNN Training')
+    p.add_argument('--data',    default='dataset',
+                   help='Root dataset directory (expects train/val/test subdirs)')
+    p.add_argument('--model',   default='efficientnet', choices=['cnn', 'efficientnet'],
+                   help='Model architecture to train')
+    p.add_argument('--epochs',  type=int, default=30)
+    p.add_argument('--batch',   type=int, default=32)
+    p.add_argument('--lr',      type=float, default=1e-3)
+    p.add_argument('--workers', type=int, default=4)
+    p.add_argument('--device',  default='cpu',
+                   help='Torch device: cpu, cuda, or mps')
+    p.add_argument('--output',  default='models/',
+                   help='Directory to save checkpoints')
+    return p.parse_args()
 
 
-def check_dataset(data_dir: str):
-    """
-    Verify dataset directory exists and has expected structure.
-
-    Expected:
-        dataset/
-            train/
-                class_name_1/   (*.jpg, *.png)
-                class_name_2/
-            val/
-                class_name_1/
-                class_name_2/
-    """
-    data_path = Path(data_dir)
-    train_path = data_path / "train"
-    val_path = data_path / "val"
-
-    if not train_path.exists():
-        print(f"[ERROR] Training data not found at: {train_path}")
-        print("[INFO] Please download a plant disease dataset (e.g., PlantVillage) and")
-        print("       organize it into dataset/train/ and dataset/val/ with class subdirectories.")
-        return False
-
-    classes = [d.name for d in train_path.iterdir() if d.is_dir()]
-    print(f"[INFO] Found {len(classes)} disease classes: {classes}")
-    return True
-
-
-def build_model_keras(num_classes: int, img_size: int, dropout_rate: float):
-    """
-    Build a CNN model using Keras.
-
-    Args:
-        num_classes: Number of disease categories.
-        img_size: Input image dimension (square).
-        dropout_rate: Dropout probability.
-
-    Returns:
-        Compiled Keras model.
-    """
-    try:
-        import tensorflow as tf
-        from tensorflow import keras
-        from tensorflow.keras import layers
-    except ImportError:
-        print("[ERROR] TensorFlow not installed. Run: pip install tensorflow")
-        return None
-
-    model = keras.Sequential([
-        layers.Input(shape=(img_size, img_size, 3)),
-        # Block 1
-        layers.Conv2D(32, (3, 3), activation='relu', padding='same'),
-        layers.MaxPooling2D((2, 2)),
-        # Block 2
-        layers.Conv2D(64, (3, 3), activation='relu', padding='same'),
-        layers.MaxPooling2D((2, 2)),
-        # Block 3
-        layers.Conv2D(128, (3, 3), activation='relu', padding='same'),
-        layers.GlobalAveragePooling2D(),
-        # Classifier head
-        layers.Dense(256, activation='relu'),
-        layers.Dropout(dropout_rate),
-        layers.Dense(num_classes, activation='softmax')
-    ])
-
-    model.compile(
-        optimizer=keras.optimizers.Adam(learning_rate=1e-3),
-        loss='categorical_crossentropy',
-        metrics=['accuracy']
-    )
-    model.summary()
-    return model
-
-
-def train_with_keras(data_dir: str, epochs: int, batch_size: int, img_size: int,
-                     dropout: float, output_dir: str):
-    """
-    Train CNN using Keras ImageDataGenerator pipeline.
-
-    Args:
-        data_dir: Root dataset directory.
-        epochs: Training epochs.
-        batch_size: Batch size.
-        img_size: Image dimension.
-        dropout: Dropout rate.
-        output_dir: Directory to save model.
-    """
-    try:
-        import tensorflow as tf
-        from tensorflow.keras.preprocessing.image import ImageDataGenerator
-    except ImportError:
-        print("[ERROR] TensorFlow not installed.")
-        return
-
-    # Data generators with augmentation
-    train_datagen = ImageDataGenerator(
-        rescale=1.0/255,
-        rotation_range=30,
-        width_shift_range=0.2,
-        height_shift_range=0.2,
-        horizontal_flip=True,
-        vertical_flip=True,
-        zoom_range=0.2,
-        brightness_range=[0.8, 1.2]
-    )
-    val_datagen = ImageDataGenerator(rescale=1.0/255)
-
-    train_gen = train_datagen.flow_from_directory(
-        os.path.join(data_dir, "train"),
-        target_size=(img_size, img_size),
-        batch_size=batch_size,
-        class_mode='categorical'
-    )
-    val_gen = val_datagen.flow_from_directory(
-        os.path.join(data_dir, "val"),
-        target_size=(img_size, img_size),
-        batch_size=batch_size,
-        class_mode='categorical'
-    )
-
-    num_classes = train_gen.num_classes
-    print(f"[INFO] Classes: {num_classes}")
-
-    model = build_model_keras(num_classes, img_size, dropout)
-    if model is None:
-        return
-
-    # Callbacks
-    callbacks = [
-        tf.keras.callbacks.EarlyStopping(patience=5, restore_best_weights=True),
-        tf.keras.callbacks.ReduceLROnPlateau(factor=0.5, patience=3),
-        tf.keras.callbacks.ModelCheckpoint(
-            filepath=os.path.join(output_dir, "best_model.keras"),
-            save_best_only=True
-        )
-    ]
-
-    Path(output_dir).mkdir(parents=True, exist_ok=True)
-    history = model.fit(train_gen, validation_data=val_gen, epochs=epochs, callbacks=callbacks)
-
-    print("[INFO] Training complete. Model saved to:", output_dir)
-    return model, history
-
-
-if __name__ == "__main__":
+def main() -> None:
     args = parse_args()
-    print("[INFO] Crop Disease Detection — CNN Training")
-    print(f"[INFO] Data: {args.data_dir} | Epochs: {args.epochs} | Batch: {args.batch_size}")
 
-    if check_dataset(args.data_dir):
-        train_with_keras(
-            data_dir=args.data_dir,
-            epochs=args.epochs,
-            batch_size=args.batch_size,
-            img_size=args.img_size,
-            dropout=args.dropout,
-            output_dir=args.output_dir
+    if not TORCH_AVAILABLE:
+        logger.error('PyTorch is not installed. Run: pip install torch torchvision')
+        sys.exit(1)
+
+    from src.utils.config import DataConfig, TrainingConfig, PathConfig
+    from src.models.cnn_model import get_model
+    from src.dataset.dataset_loader import create_data_loaders
+    from src.training.trainer import Trainer
+
+    data_cfg = DataConfig(
+        data_dir=args.data,
+        train_dir=str(Path(args.data) / 'train'),
+        val_dir=str(Path(args.data) / 'val'),
+        test_dir=str(Path(args.data) / 'test'),
+        num_workers=args.workers,
+    )
+    train_cfg = TrainingConfig(
+        epochs=args.epochs,
+        batch_size=args.batch,
+        learning_rate=args.lr,
+    )
+    path_cfg = PathConfig(models_dir=args.output)
+
+    logger.info('Loading dataset from %s', args.data)
+    try:
+        train_loader, val_loader, _, class_names = create_data_loaders(
+            data_dir=args.data,
+            batch_size=train_cfg.batch_size,
+            img_size=data_cfg.img_size,
+            num_workers=data_cfg.num_workers,
         )
-    else:
-        print("[INFO] Training skipped — please add dataset first.")
+    except Exception as exc:
+        logger.error(
+            'Failed to load dataset: %s\n'
+            'Ensure the dataset is in the expected structure:\n'
+            '  %s/train/<class_name>/<image.jpg>\n'
+            '  %s/val/<class_name>/<image.jpg>\n'
+            'See dataset/README.md for download instructions.',
+            exc, args.data, args.data
+        )
+        sys.exit(1)
+
+    num_classes = len(class_names)
+    logger.info('Classes (%d): %s', num_classes, class_names)
+
+    model = get_model(
+        model_type=args.model,
+        num_classes=num_classes,
+        dropout_rate=train_cfg.dropout_rate,
+    )
+    logger.info('Model: %s  Parameters: %s',
+                args.model, f'{model.get_num_params():,}' if hasattr(model, 'get_num_params') else 'N/A')
+
+    trainer = Trainer(
+        model=model,
+        train_loader=train_loader,
+        val_loader=val_loader,
+        config=train_cfg,
+        device=args.device,
+    )
+
+    logger.info('Starting training for %d epochs on %s', args.epochs, args.device)
+    history = trainer.train(num_epochs=args.epochs)
+
+    best_val_acc = max(history['val_acc']) * 100 if history['val_acc'] else 0.0
+    logger.info('Training complete. Best val_acc: %.2f%%', best_val_acc)
+    logger.info('Best checkpoint saved to: %s', path_cfg.best_checkpoint_path)
+
+
+if __name__ == '__main__':
+    main()

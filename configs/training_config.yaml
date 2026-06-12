@@ -1,0 +1,37 @@
+# Crop Disease Detection — Training Configuration
+data:
+  data_dir: dataset
+  img_size: 224
+  num_workers: 4
+  class_names:
+    - Healthy
+    - Early_Blight
+    - Late_Blight
+    - Leaf_Mold
+    - Septoria_Leaf_Spot
+    - Spider_Mites
+    - Target_Spot
+    - Mosaic_Virus
+    - Yellow_Leaf_Curl
+    - Bacterial_Spot
+
+training:
+  epochs: 30
+  batch_size: 32
+  learning_rate: 0.001
+  dropout_rate: 0.3
+  weight_decay: 0.0001
+  patience: 7
+  lr_factor: 0.5
+  lr_min: 0.000001
+  grad_clip: 1.0
+
+model:
+  type: efficientnet  # choices: cnn, efficientnet
+  num_classes: 10
+
+paths:
+  models_dir: models
+  logs_dir: logs
+  outputs_dir: outputs
+  checkpoint_name: best_model.pt
