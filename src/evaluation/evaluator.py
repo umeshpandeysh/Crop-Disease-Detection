@@ -171,7 +171,6 @@ class Evaluator:
         if cm is None:
             cm = self.get_confusion_matrix()
 
-        import numpy as np
         fig, ax = plt.subplots(figsize=(12, 10))
         cm_norm = cm.astype(float) / (cm.sum(axis=1, keepdims=True) + 1e-8)
         sns.heatmap(

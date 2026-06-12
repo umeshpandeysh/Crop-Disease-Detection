@@ -11,7 +11,6 @@ logger = logging.getLogger(__name__)
 try:
     import torch
     import torch.nn as nn
-    from torch.utils.data import DataLoader
     _TORCH_AVAILABLE = True
 except ImportError:
     logger.warning("PyTorch not installed. Trainer will not function.")
