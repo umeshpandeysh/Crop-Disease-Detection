@@ -1,11 +1,14 @@
 # 🌾 Crop Disease Detection — Computer Vision with CNN
 
 [![Python](https://img.shields.io/badge/Python-3.10+-3776AB?style=flat&logo=python&logoColor=white)](https://python.org)
-[![CNN](https://img.shields.io/badge/CNN-Deep%20Learning-FF6F00?style=flat&logo=tensorflow&logoColor=white)]()
-[![Scikit-learn](https://img.shields.io/badge/Scikit--learn-1.3+-F7931E?style=flat&logo=scikit-learn&logoColor=white)](https://scikit-learn.org)
+[![PyTorch](https://img.shields.io/badge/PyTorch-2.0+-EE4C2C?style=flat&logo=pytorch&logoColor=white)](https://pytorch.org)
+[![EfficientNet](https://img.shields.io/badge/EfficientNet--B0-Transfer%20Learning-FF6F00?style=flat)]()
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-> A deep learning system for automated multi-class plant disease detection from leaf images using Convolutional Neural Networks (CNNs). Trained on labelled agricultural image datasets with data augmentation to improve generalisation.
+> A deep learning system for automated multi-class plant disease detection from leaf images. Implements a **custom 4-block CNN** and **EfficientNet-B0 transfer learning** using PyTorch, trained on the [PlantVillage dataset](https://www.kaggle.com/datasets/emmarex/plantdisease).
+
+> [!NOTE]
+> This repository contains the full training pipeline. Model weights require downloading the PlantVillage dataset separately (see [dataset/README.md](dataset/README.md)).
 
 ---
 
@@ -146,16 +149,33 @@ Models are evaluated using the following metrics (reported on held-out test set)
 Crop-Disease-Detection/
 ├── README.md
 ├── requirements.txt
-├── training/
-│   └── train.py                  # Full CNN training script
+├── src/
+│   ├── dataset/
+│   │   └── dataset_loader.py    # CropDiseaseDataset + WeightedRandomSampler
+│   ├── preprocessing/
+│   │   ├── transforms.py        # Train/val/inference augmentation pipelines
+│   │   └── image_utils.py       # Validation, stats, visualization
+│   ├── models/
+│   │   └── cnn_model.py         # CropDiseaseCNN + EfficientNet-B0 factory
+│   ├── training/
+│   │   └── trainer.py           # Training loop, early stopping, checkpointing
+│   ├── evaluation/
+│   │   └── evaluator.py         # Confusion matrix, per-class metrics
+│   ├── inference/
+│   │   └── predict.py           # DiseasePredictor CLI with top-k output
+│   └── utils/
+│       └── config.py            # DataConfig, TrainingConfig dataclasses
 ├── dataset/
-│   ├── README.md                 # Dataset download instructions
-│   └── (place dataset splits here)
+│   └── README.md              # Download instructions (PlantVillage)
+├── tests/
+│   ├── test_dataset_loader.py
+│   └── test_transforms.py
 ├── notebooks/
-│   └── 01_cnn_pipeline.ipynb     # End-to-end walkthrough notebook
-├── screenshots/
-│   └── (model outputs, confusion matrix plots)
+│   ├── 01_data_exploration.ipynb
+│   ├── 02_model_training.ipynb
+│   └── 03_evaluation_gradcam.ipynb
 └── docs/
+    ├── model_card.md
     └── architecture.md
 ```
 
@@ -168,14 +188,18 @@ git clone https://github.com/umeshpandeysh/Crop-Disease-Detection.git
 cd Crop-Disease-Detection
 
 python -m venv venv
-venv\Scripts\activate
+venv\Scripts\activate  # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 
-# Run the training notebook
-jupyter notebook notebooks/01_cnn_pipeline.ipynb
+# See dataset/README.md for PlantVillage download instructions
+# Then run training
+python -c "from src.training.trainer import Trainer; print('Setup OK')"
 
-# Or run training directly
-python training/train.py
+# Run EDA notebook
+jupyter notebook notebooks/01_data_exploration.ipynb
+
+# Single image inference
+python src/inference/predict.py --image path/to/leaf.jpg --model models/best.pth
 ```
 
 ---
